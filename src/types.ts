@@ -1,4 +1,4 @@
-import { PlatformConfig } from 'matterbridge';
+import { type PlatformConfig } from 'matterbridge';
 
 /** Persisted fan configuration (saved in plugin config). */
 export interface StoredFanConfig {

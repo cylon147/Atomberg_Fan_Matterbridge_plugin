@@ -1,9 +1,9 @@
 import { FanControl } from 'matterbridge/matter/clusters';
 import { bridgedNode, fan as fanDeviceType, MatterbridgeEndpoint, powerSource } from 'matterbridge';
-import { AnsiLogger, debugStringify } from 'matterbridge/logger';
+import { type AnsiLogger, debugStringify } from 'matterbridge/logger';
 import { isValidNumber } from 'matterbridge/utils';
 
-import { AtombergFanRecord } from './types.js';
+import { type AtombergFanRecord } from './types.js';
 
 const BRIDGED_INFO_CLUSTER = 'BridgedDeviceBasicInformation';
 const FAN_CLUSTER = 'FanControl';

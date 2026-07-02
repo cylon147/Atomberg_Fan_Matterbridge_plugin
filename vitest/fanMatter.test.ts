@@ -1,12 +1,12 @@
-import { jest } from '@jest/globals';
-import { MatterbridgeEndpoint } from 'matterbridge';
+import { describe, expect, it, vi } from 'vitest';
+import { type MatterbridgeEndpoint } from 'matterbridge';
 
 import { updateFanEndpointIdentity } from '../src/fanMatter.js';
-import { AtombergFanRecord } from '../src/types.js';
+import { type AtombergFanRecord } from '../src/types.js';
 
 describe('fanMatter', () => {
   it('updates bridged device identity attributes without re-registering', async () => {
-    const updateAttribute = jest.fn(async () => true);
+    const updateAttribute = vi.fn(() => Promise.resolve(true));
     const endpoint = {
       deviceName: 'Old Name',
       productName: 'Old Product',

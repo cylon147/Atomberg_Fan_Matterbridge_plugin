@@ -1,0 +1,57 @@
+{
+  "title": "Matterbridge Atomberg Plugin",
+  "description": "matterbridge-atomberg-plugin configuration schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "description": "Plugin name",
+      "type": "string",
+      "readOnly": true
+    },
+    "type": {
+      "description": "Plugin type",
+      "type": "string",
+      "readOnly": true
+    },
+    "debug": {
+      "description": "Enable the debug for the plugin (development only)",
+      "type": "boolean",
+      "default": false
+    },
+    "unregisterOnShutdown": {
+      "description": "Unregister all devices on shutdown (development only)",
+      "type": "boolean",
+      "default": false
+    },
+    "fans": {
+      "description": "Static list of Atomberg fans to control locally over UDP (port 5600). If empty, the plugin relies on local discovery.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Display name for the accessory"
+          },
+          "ip": {
+            "type": "string",
+            "format": "ipv4",
+            "description": "Fan IPv4 address"
+          },
+          "mac": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{12}$",
+            "description": "12-hex MAC (no separators), e.g. a0764e5aee98"
+          },
+          "series": {
+            "type": "string",
+            "description": "Optional series code (e.g. R1, I1)"
+          }
+        },
+        "required": ["ip"],
+        "additionalProperties": false
+      }
+    }
+  }
+}

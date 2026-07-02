@@ -2,14 +2,15 @@ import dgram from 'node:dgram';
 
 import {
   MatterbridgeDynamicPlatform,
-  MatterbridgeEndpoint,
-  PlatformConfig,
-  PlatformMatterbridge,
+  type MatterbridgeEndpoint,
+  type PlatformConfig,
+  type PlatformMatterbridge,
 } from 'matterbridge';
 import { FanControl } from 'matterbridge/matter/clusters';
-import { AnsiLogger, LogLevel } from 'matterbridge/logger';
+import { type AnsiLogger, type LogLevel } from 'matterbridge/logger';
 import { isValidString } from 'matterbridge/utils';
 
+import { normalizeDeviceId } from './atomberg-state.js';
 import {
   buildFanSerial,
   buildFanStorageKey,
@@ -20,11 +21,11 @@ import {
   updateFanEndpointIdentity,
 } from './fanMatter.js';
 import {
-  AtombergFanRecord,
-  AtombergPluginConfig,
-  DiscoveredFanStatus,
-  FanListItem,
-  StoredFanConfig,
+  type AtombergFanRecord,
+  type AtombergPluginConfig,
+  type DiscoveredFanStatus,
+  type FanListItem,
+  type StoredFanConfig,
 } from './types.js';
 import { AtombergUdpDiscovery } from './udpDiscovery.js';
 
@@ -41,6 +42,7 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
   private readonly atombergConfig: AtombergPluginConfig;
   private udpDiscovery: AtombergUdpDiscovery | undefined;
   private readonly endpointByIp = new Map<string, MatterbridgeEndpoint>();
+  private readonly endpointByDeviceId = new Map<string, MatterbridgeEndpoint>();
   private readonly fanRecordByIp = new Map<string, AtombergFanRecord>();
 
   constructor(matterbridge: PlatformMatterbridge, log: AnsiLogger, config: PlatformConfig) {
@@ -58,7 +60,7 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     this.log.info('Initializing Atomberg Fan platform...');
   }
 
-  override async onStart(reason?: string) {
+  override async onStart(reason?: string): Promise<void> {
     this.log.info(`onStart called with reason: ${reason ?? 'none'}`);
 
     await this.ready;
@@ -68,7 +70,7 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     await this.registerConfiguredMatterFans();
   }
 
-  override async onConfigure() {
+  override async onConfigure(): Promise<void> {
     await super.onConfigure();
     this.log.info('onConfigure called');
 
@@ -77,18 +79,18 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     }
   }
 
-  override async onChangeLoggerLevel(logLevel: LogLevel) {
+  override async onChangeLoggerLevel(logLevel: LogLevel): Promise<void> {
     this.log.info(`onChangeLoggerLevel called with: ${logLevel}`);
   }
 
-  override async onShutdown(reason?: string) {
+  override async onShutdown(reason?: string): Promise<void> {
     this.udpDiscovery?.stop();
     this.udpDiscovery = undefined;
 
     await super.onShutdown(reason);
     this.log.info(`onShutdown called with reason: ${reason ?? 'none'}`);
 
-    if (this.config.unregisterOnShutdown === true) await this.unregisterAllDevices();
+    if (this.config.unregisterOnShutdown) await this.unregisterAllDevices();
   }
 
   override async onAction(action: string): Promise<void> {
@@ -133,8 +135,12 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
   }
 
   private async handleUdpStatusUpdate(status: DiscoveredFanStatus): Promise<void> {
-    const endpoint = this.endpointByIp.get(status.ipAddress);
+    const deviceId = normalizeDeviceId(status.deviceId);
+    let endpoint = deviceId ? this.endpointByDeviceId.get(deviceId) : undefined;
+    if (!endpoint) endpoint = this.endpointByIp.get(status.ipAddress);
     if (!endpoint) return;
+
+    if (deviceId) this.endpointByDeviceId.set(deviceId, endpoint);
     await syncFanStateFromUdp(endpoint, status.power, status.speed, endpoint.log);
   }
 
@@ -155,7 +161,7 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     const ipSet = new Set<string>([...storedByIp.keys(), ...discovered.map((fan) => fan.ipAddress)]);
 
     const rows: FanListItem[] = [];
-    for (const ipAddress of [...ipSet].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))) {
+    for (const ipAddress of [...ipSet].toSorted((a, b) => a.localeCompare(b, undefined, { numeric: true }))) {
       const stored = storedByIp.get(ipAddress);
       const live = discovered.find((fan) => fan.ipAddress === ipAddress);
       const displayName = stored?.displayName ?? live?.series ?? live?.model ?? `Atomberg Fan (${ipAddress})`;
@@ -277,12 +283,20 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     this.endpointByIp.set(ipAddress, endpoint);
     this.fanRecordByIp.set(ipAddress, record);
 
+    const deviceId = normalizeDeviceId(record.deviceId ?? live?.deviceId);
+    if (deviceId) this.endpointByDeviceId.set(deviceId, endpoint);
+
     if (live) await syncFanStateFromUdp(endpoint, live.power, live.speed, endpoint.log);
   }
 
   private async unregisterMatterFan(ipAddress: string): Promise<void> {
     const endpoint = this.endpointByIp.get(ipAddress);
     if (!endpoint) return;
+
+    const record = this.fanRecordByIp.get(ipAddress);
+    const deviceId = normalizeDeviceId(record?.deviceId);
+    if (deviceId) this.endpointByDeviceId.delete(deviceId);
+
     await this.unregisterDevice(endpoint);
     this.endpointByIp.delete(ipAddress);
     this.fanRecordByIp.delete(ipAddress);

@@ -1,6 +1,6 @@
-import { describe, expect, it } from '@jest/globals';
+import { describe, expect, it } from 'vitest';
 
-import { decodeAtombergPayload } from '../src/udpDiscovery.ts';
+import { decodeAtombergPayload } from '../src/udpDiscovery.js';
 
 describe('Atomberg UDP discovery', () => {
   it('decodes plain JSON payloads', () => {
