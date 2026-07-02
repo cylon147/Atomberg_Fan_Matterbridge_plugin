@@ -83,7 +83,7 @@ describe('TemplatePlatform', () => {
     expect(Array.isArray(list.fans)).toBe(true);
     expect(list.fans.some((fan) => fan.ipAddress === '192.168.1.50' && fan.displayName === 'Bedroom Fan')).toBe(true);
 
-    const configured = (await instance.onFetch('POST', 'fans/configure', undefined, {
+    const configured = (await instance.onFetch('POST', 'fans-configure', undefined, {
       ipAddress: '192.168.1.51',
       displayName: 'Kitchen Fan',
       productName: 'Atomberg Renesa',
@@ -110,7 +110,7 @@ describe('TemplatePlatform', () => {
       uniqueStorageKey: 'atomberg-fan-192-168-1-50',
     });
 
-    const result = (await instance.onFetch('POST', 'fans/configure', undefined, {
+    const result = (await instance.onFetch('POST', 'fans-configure', undefined, {
       ipAddress: '192.168.1.50',
       displayName: 'Primary Bedroom Fan',
       productName: 'Atomberg Renesa',

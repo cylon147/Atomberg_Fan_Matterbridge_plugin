@@ -83,6 +83,7 @@
     "test:watch": "vitest watch",
     "test:verbose": "npm run test -- --reporter verbose",
     "test:coverage": "vitest run --coverage",
+    "test:e2e": "vitest run vitest/e2e",
     "lint": "oxlint --disable-nested-config",
     "lint:fix": "oxlint --fix --disable-nested-config",
     "format": "oxfmt",

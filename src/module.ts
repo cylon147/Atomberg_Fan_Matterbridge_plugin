@@ -6,7 +6,7 @@ import {
   type PlatformConfig,
   type PlatformMatterbridge,
 } from 'matterbridge';
-import { FanControl } from 'matterbridge/matter/clusters';
+import { buildAtombergUdpCommand, CONTROL_PENDING_MS, expectedSpeedAfterCommand } from './fanSpeed.js';
 import { type AnsiLogger, type LogLevel } from 'matterbridge/logger';
 import { isValidString } from 'matterbridge/utils';
 
@@ -44,6 +44,7 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
   private readonly endpointByIp = new Map<string, MatterbridgeEndpoint>();
   private readonly endpointByDeviceId = new Map<string, MatterbridgeEndpoint>();
   private readonly fanRecordByIp = new Map<string, AtombergFanRecord>();
+  private readonly pendingControlByIp = new Map<string, { until: number; expectedSpeed: number }>();
 
   constructor(matterbridge: PlatformMatterbridge, log: AnsiLogger, config: PlatformConfig) {
     super(matterbridge, log, config);
@@ -112,15 +113,15 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
       };
     }
 
-    if (method === 'POST' && path === 'fans/configure') {
+    if (method === 'POST' && path === 'fans-configure') {
       return this.configureFan(body as Record<string, unknown>);
     }
 
-    if (method === 'POST' && path === 'fans/matter') {
+    if (method === 'POST' && path === 'fans-matter') {
       return this.toggleMatterRegistration(body as Record<string, unknown>);
     }
 
-    if (method === 'POST' && path === 'discovery/refresh') {
+    if (method === 'POST' && path === 'discovery-refresh') {
       return { fans: this.buildFanList(), refreshedAt: Date.now() };
     }
 
@@ -141,7 +142,35 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     if (!endpoint) return;
 
     if (deviceId) this.endpointByDeviceId.set(deviceId, endpoint);
+
+    const reportedSpeed = status.power === false ? 0 : (status.speed ?? 0);
+    if (!this.shouldApplyUdpSync(status.ipAddress, reportedSpeed)) return;
+
     await syncFanStateFromUdp(endpoint, status.power, status.speed, endpoint.log);
+  }
+
+  private markPendingControl(ipAddress: string, expectedSpeed: number): void {
+    this.pendingControlByIp.set(ipAddress, {
+      until: Date.now() + CONTROL_PENDING_MS,
+      expectedSpeed,
+    });
+  }
+
+  private shouldApplyUdpSync(ipAddress: string, reportedSpeed: number): boolean {
+    const pending = this.pendingControlByIp.get(ipAddress);
+    if (!pending) return true;
+
+    if (Date.now() > pending.until) {
+      this.pendingControlByIp.delete(ipAddress);
+      return true;
+    }
+
+    if (reportedSpeed === pending.expectedSpeed) {
+      this.pendingControlByIp.delete(ipAddress);
+      return true;
+    }
+
+    return false;
   }
 
   private async registerConfiguredMatterFans(): Promise<void> {
@@ -276,7 +305,11 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     const endpoint = createFanEndpoint(record, this.matterbridge.aggregatorVendorId, configUrl, this.config.debug);
 
     setupFanHandlers(endpoint, record, (fan, command) => {
-      void this.sendUdpCommand(fan.ipAddress, command);
+      const live = this.udpDiscovery?.getFan(fan.ipAddress);
+      const currentSpeed = live?.power === false ? 0 : (live?.speed ?? 0);
+      const expectedSpeed = expectedSpeedAfterCommand(command, currentSpeed);
+      if (expectedSpeed !== undefined) this.markPendingControl(fan.ipAddress, expectedSpeed);
+      void this.sendUdpCommand(fan.ipAddress, command, currentSpeed);
     });
 
     await this.registerDevice(endpoint);
@@ -325,21 +358,17 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     return typeof this.atombergConfig.udpCommandPort === 'number' ? this.atombergConfig.udpCommandPort : 5600;
   }
 
-  private async sendUdpCommand(ipAddress: string, command: Record<string, unknown>): Promise<void> {
+  private async sendUdpCommand(ipAddress: string, command: Record<string, unknown>, currentSpeed = 0): Promise<void> {
     const stored = this.getStoredFans().find((fan) => fan.ipAddress === ipAddress);
-    const live = this.udpDiscovery?.getFan(ipAddress);
-    const deviceId = live?.deviceId;
-    if (!deviceId) {
-      this.log.warn(`${stored?.displayName ?? ipAddress}: UDP control skipped (device_id not yet received from fan broadcasts).`);
+    const atombergCommand = buildAtombergUdpCommand(command, currentSpeed);
+    if (!atombergCommand) {
+      this.log.warn(`${stored?.displayName ?? ipAddress}: unsupported Matter control command ${JSON.stringify(command)}`);
       return;
     }
 
-    const payload = this.buildUdpCommandPayload(deviceId, command);
-    if (!payload) return;
-
     await new Promise<void>((resolve, reject) => {
       const socket = dgram.createSocket('udp4');
-      const message = Buffer.from(JSON.stringify(payload));
+      const message = Buffer.from(JSON.stringify(atombergCommand));
 
       socket.send(message, this.getCommandPort(), ipAddress, (error) => {
         socket.close();
@@ -348,32 +377,6 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
       });
     });
 
-    this.log.info(`${stored?.displayName ?? ipAddress}: sent UDP command ${JSON.stringify(payload.command)}`);
-  }
-
-  private buildUdpCommandPayload(deviceId: string, command: Record<string, unknown>): { device_id: string; command: Record<string, unknown> } | null {
-    const type = typeof command.type === 'string' ? command.type : '';
-
-    if (type === 'fanMode') {
-      const mode = command.value;
-      if (mode === FanControl.FanMode.Off) return { device_id: deviceId, command: { power: false } };
-      if (mode === FanControl.FanMode.Low) return { device_id: deviceId, command: { power: true, speed: 1 } };
-      if (mode === FanControl.FanMode.Medium) return { device_id: deviceId, command: { power: true, speed: 2 } };
-      if (mode === FanControl.FanMode.High || mode === FanControl.FanMode.On) return { device_id: deviceId, command: { power: true, speed: 3 } };
-      return { device_id: deviceId, command: { power: true } };
-    }
-
-    if (type === 'percentSetting') {
-      const value = command.value;
-      if (value === null) return { device_id: deviceId, command: { power: true } };
-      if (typeof value === 'number') {
-        if (value <= 0) return { device_id: deviceId, command: { power: false } };
-        if (value <= 33) return { device_id: deviceId, command: { power: true, speed: 1 } };
-        if (value <= 66) return { device_id: deviceId, command: { power: true, speed: 2 } };
-        return { device_id: deviceId, command: { power: true, speed: 3 } };
-      }
-    }
-
-    return null;
+    this.log.info(`${stored?.displayName ?? ipAddress}: sent UDP command ${JSON.stringify(atombergCommand)} to ${ipAddress}:${this.getCommandPort()}`);
   }
 }

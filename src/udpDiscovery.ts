@@ -84,8 +84,8 @@ export class AtombergUdpDiscovery {
       this.handleMessage(message, ipAddress);
     });
 
-    this.socket.bind(this.listenPort, () => {
-      this.log.info(`Atomberg UDP discovery listening on port ${this.listenPort}`);
+    this.socket.bind(this.listenPort, '0.0.0.0', () => {
+      this.log.info(`Atomberg UDP discovery listening on 0.0.0.0:${this.listenPort}`);
     });
 
     this.pruneTimer = setInterval(() => this.markStaleOffline(), 30_000);

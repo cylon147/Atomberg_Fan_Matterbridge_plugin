@@ -1,15 +1,20 @@
 import { FanControl } from 'matterbridge/matter/clusters';
 import { bridgedNode, fan as fanDeviceType, MatterbridgeEndpoint, powerSource } from 'matterbridge';
 import { type AnsiLogger, debugStringify } from 'matterbridge/logger';
-import { isValidNumber } from 'matterbridge/utils';
 
+import {
+  ATOMBERG_MAX_SPEED,
+  atombergSpeedToFanMode,
+  atombergSpeedToPercent,
+  fanModeToAtombergSpeed,
+  percentToAtombergSpeed,
+} from './fanSpeed.js';
 import { type AtombergFanRecord } from './types.js';
 
 const BRIDGED_INFO_CLUSTER = 'BridgedDeviceBasicInformation';
 const FAN_CLUSTER = 'FanControl';
 
 const FAN_MODE_LOOKUP = ['Off', 'Low', 'Medium', 'High', 'On', 'Auto', 'Smart'];
-const FAN_DIRECTION_LOOKUP = ['Forward', 'Reverse'];
 
 export function buildFanStorageKey(ipAddress: string): string {
   return `atomberg-fan-${ipAddress.replace(/\./g, '-')}`;
@@ -38,7 +43,15 @@ export function createFanEndpoint(
       fan.productName,
     )
     .createDefaultPowerSourceWiredClusterServer()
-    .createCompleteFanControlClusterServer()
+    .createMultiSpeedFanControlClusterServer(
+      FanControl.FanMode.Off,
+      FanControl.FanModeSequence.OffLowMedHighAuto,
+      0,
+      0,
+      ATOMBERG_MAX_SPEED,
+      0,
+      0,
+    )
     .addRequiredClusterServers();
 
   endpoint.configUrl = configUrl;
@@ -83,40 +96,9 @@ export function setupFanHandlers(
 
   endpoint.subscribeAttribute(
     FAN_CLUSTER,
-    'rockSetting',
-    (newValue: object, oldValue: object, context) => {
-      endpoint.log.info(
-        `${fan.displayName}: rock setting changed from ${debugStringify(oldValue)} to ${debugStringify(newValue)} context: ${context.fabric === undefined ? 'offline' : 'online'}`,
-      );
-      if (context.fabric === undefined) return;
-      onControl?.(fan, { type: 'rockSetting', value: newValue });
-    },
-    endpoint.log,
-  );
-
-  endpoint.subscribeAttribute(
-    FAN_CLUSTER,
-    'windSetting',
-    (newValue: object, oldValue: object, context) => {
-      endpoint.log.info(
-        `${fan.displayName}: wind setting changed from ${debugStringify(oldValue)} to ${debugStringify(newValue)} context: ${context.fabric === undefined ? 'offline' : 'online'}`,
-      );
-      if (context.fabric === undefined) return;
-      onControl?.(fan, { type: 'windSetting', value: newValue });
-    },
-    endpoint.log,
-  );
-
-  endpoint.subscribeAttribute(
-    FAN_CLUSTER,
-    'airflowDirection',
-    (newValue: number, oldValue: number, context) => {
-      endpoint.log.info(
-        `${fan.displayName}: airflow direction changed from ${FAN_DIRECTION_LOOKUP[oldValue] ?? oldValue} to ${FAN_DIRECTION_LOOKUP[newValue] ?? newValue} context: ${context.fabric === undefined ? 'offline' : 'online'}`,
-      );
-      if (context.fabric === undefined) return;
-      onControl?.(fan, { type: 'airflowDirection', value: newValue });
-    },
+    'speedSetting',
+    (newValue: number | null, oldValue: number | null, context) =>
+      void handleSpeedSettingChange(endpoint, fan, newValue, oldValue, context, onControl),
     endpoint.log,
   );
 
@@ -136,31 +118,53 @@ export async function syncFanStateFromUdp(
     await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', FanControl.FanMode.Off, log);
     await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', 0, log);
     await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', 0, log);
+    await endpoint.setAttribute(FAN_CLUSTER, 'speedSetting', 0, log);
+    await endpoint.setAttribute(FAN_CLUSTER, 'speedCurrent', 0, log);
     return;
   }
 
   if (speed === undefined) return;
 
-  let percent = 0;
-  let mode = FanControl.FanMode.Off;
-
-  if (speed <= 0) {
-    percent = 0;
-    mode = FanControl.FanMode.Off;
-  } else if (speed === 1) {
-    percent = 33;
-    mode = FanControl.FanMode.Low;
-  } else if (speed === 2) {
-    percent = 50;
-    mode = FanControl.FanMode.Medium;
-  } else if (speed >= 3) {
-    percent = 100;
-    mode = FanControl.FanMode.High;
-  }
+  const level = speed <= 0 ? 0 : Math.max(1, Math.min(ATOMBERG_MAX_SPEED, Math.round(speed)));
+  const percent = atombergSpeedToPercent(level);
+  const mode = atombergSpeedToFanMode(level);
 
   await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', mode, log);
   await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', percent, log);
   await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', percent, log);
+  await endpoint.setAttribute(FAN_CLUSTER, 'speedSetting', level, log);
+  await endpoint.setAttribute(FAN_CLUSTER, 'speedCurrent', level, log);
+}
+
+async function applyAtombergSpeedToEndpoint(endpoint: MatterbridgeEndpoint, atombergSpeed: number): Promise<void> {
+  const level = atombergSpeed <= 0 ? 0 : Math.max(1, Math.min(ATOMBERG_MAX_SPEED, Math.round(atombergSpeed)));
+  const percent = atombergSpeedToPercent(level);
+  const mode = atombergSpeedToFanMode(level);
+
+  await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', mode, endpoint.log);
+  await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', percent, endpoint.log);
+  await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', percent, endpoint.log);
+  await endpoint.setAttribute(FAN_CLUSTER, 'speedSetting', level, endpoint.log);
+  await endpoint.setAttribute(FAN_CLUSTER, 'speedCurrent', level, endpoint.log);
+}
+
+async function handleSpeedSettingChange(
+  endpoint: MatterbridgeEndpoint,
+  fan: AtombergFanRecord,
+  newValue: number | null,
+  oldValue: number | null,
+  context: { fabric?: unknown },
+  onControl?: (fan: AtombergFanRecord, command: Record<string, unknown>) => void,
+): Promise<void> {
+  endpoint.log.info(
+    `${fan.displayName}: speed setting changed from ${oldValue} to ${newValue} context: ${context.fabric === undefined ? 'offline' : 'online'}`,
+  );
+
+  if (context.fabric === undefined || newValue === null) return;
+
+  const level = Math.max(0, Math.min(ATOMBERG_MAX_SPEED, Math.round(newValue)));
+  onControl?.(fan, { type: 'speedSetting', value: level });
+  await applyAtombergSpeedToEndpoint(endpoint, level);
 }
 
 async function handleFanModeChange(
@@ -179,26 +183,13 @@ async function handleFanModeChange(
 
   onControl?.(fan, { type: 'fanMode', value: newValue });
 
-  if (newValue === FanControl.FanMode.Off) {
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', 0, endpoint.log);
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', 0, endpoint.log);
-  } else if (newValue === FanControl.FanMode.Low) {
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', 33, endpoint.log);
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', 33, endpoint.log);
-  } else if (newValue === FanControl.FanMode.Medium) {
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', 66, endpoint.log);
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', 66, endpoint.log);
-  } else if (newValue === FanControl.FanMode.High) {
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', 100, endpoint.log);
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', 100, endpoint.log);
-  } else if (newValue === FanControl.FanMode.On) {
-    await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', FanControl.FanMode.High, endpoint.log);
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', 100, endpoint.log);
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', 100, endpoint.log);
-  } else if (newValue === FanControl.FanMode.Auto) {
+  if (newValue === FanControl.FanMode.Auto) {
     await endpoint.setAttribute(FAN_CLUSTER, 'percentSetting', null, endpoint.log);
-    await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', 50, endpoint.log);
+    await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', atombergSpeedToPercent(3), endpoint.log);
+    return;
   }
+
+  await applyAtombergSpeedToEndpoint(endpoint, fanModeToAtombergSpeed(newValue));
 }
 
 async function handlePercentSettingChange(
@@ -213,14 +204,9 @@ async function handlePercentSettingChange(
     `${fan.displayName}: percent setting changed from ${oldValue} to ${newValue} context: ${context.fabric === undefined ? 'offline' : 'online'}`,
   );
 
-  if (context.fabric === undefined) return;
+  if (context.fabric === undefined || newValue === null) return;
 
+  const level = percentToAtombergSpeed(newValue);
   onControl?.(fan, { type: 'percentSetting', value: newValue });
-
-  if (isValidNumber(newValue, 0, 100)) await endpoint.setAttribute(FAN_CLUSTER, 'percentCurrent', newValue, endpoint.log);
-  if (isValidNumber(newValue, 0, 0)) await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', FanControl.FanMode.Off, endpoint.log);
-  if (isValidNumber(newValue, 1, 33)) await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', FanControl.FanMode.Low, endpoint.log);
-  if (isValidNumber(newValue, 34, 66)) await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', FanControl.FanMode.Medium, endpoint.log);
-  if (isValidNumber(newValue, 67, 100)) await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', FanControl.FanMode.High, endpoint.log);
-  if (newValue === null) await endpoint.setAttribute(FAN_CLUSTER, 'fanMode', FanControl.FanMode.Auto, endpoint.log);
+  await applyAtombergSpeedToEndpoint(endpoint, level);
 }
