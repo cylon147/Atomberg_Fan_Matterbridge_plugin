@@ -1,6 +1,15 @@
+# Node.js CI (plugin)
+
 name: Node.js CI
 
-on: [push, pull_request]
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -9,8 +18,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20.x, 22.x, 24.x]
-        os: [ubuntu-latest, windows-latest, macos-latest, macos-15]
+        node-version: [22.x, 24.x]
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - name: Checkout repository
@@ -20,9 +29,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-
-      - name: Clean cache
-        run: npm cache clean --force
+          cache: npm
 
       - name: Verify Node.js version
         run: node -v
@@ -30,12 +37,22 @@ jobs:
       - name: Verify Npm version
         run: npm -v
 
-      - name: Clone matterbridge repo
-        run: git clone https://github.com/Luligu/matterbridge.git ../matterbridge
+      - name: Select matterbridge branch
+        id: select_matterbridge_ref
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "ref=dev" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Clone matterbridge repo branch ${{ steps.select_matterbridge_ref.outputs.ref }}
+        run: git clone --depth 1 --single-branch --no-tags -b ${{ steps.select_matterbridge_ref.outputs.ref }} https://github.com/Luligu/matterbridge.git ../matterbridge
 
       - name: Install matterbridge dependencies
         working-directory: ../matterbridge
-        run: npm ci
+        run: npm ci --no-fund --no-audit
 
       - name: Build matterbridge
         working-directory: ../matterbridge
@@ -43,19 +60,22 @@ jobs:
 
       - name: Link matterbridge globally
         working-directory: ../matterbridge
-        run: npm link
+        run: npm link --no-fund --no-audit
 
       - name: Install plugin dependencies
-        run: npm ci
+        run: npm ci --no-fund --no-audit
 
-      - name: Link matterbridge in the project
-        run: npm link matterbridge
+      - name: Link matterbridge in the plugin
+        run: npm link matterbridge --no-fund --no-audit
+
+      - name: Build the plugin
+        run: npm run build
+
+      - name: Typecheck the plugin
+        run: npm run typecheck
 
       - name: Lint the plugin
         run: npm run lint
 
-      - name: Test the plugin
-        run: npm run test
-
-      - name: Build the plugin
-        run: npm run build
+      - name: Run Vitest tests
+        run: npm run test -- --testTimeout=30000

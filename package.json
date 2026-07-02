@@ -2,8 +2,8 @@
   "name": "matterbridge-atomberg-fan",
   "version": "1.0.0",
   "description": "Matterbridge plugin for Atomberg fans with UDP discovery and web configuration UI",
-  "author": "https://github.com/Luligu",
-  "homepage": "https://github.com/Luligu/matterbridge-plugin-template/blob/main/README.md",
+  "author": "https://github.com/cylon147",
+  "homepage": "https://github.com/cylon147/Atomberg_Fan_Matterbridge_plugin/blob/main/README.md",
   "license": "Apache-2.0",
   "type": "module",
   "main": "dist/module.js",
@@ -13,14 +13,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Luligu/matterbridge-plugin-template.git"
+    "url": "git+https://github.com/cylon147/Atomberg_Fan_Matterbridge_plugin.git"
   },
   "bugs": {
-    "url": "https://github.com/Luligu/matterbridge-plugin-template/issues"
+    "url": "https://github.com/cylon147/Atomberg_Fan_Matterbridge_plugin/issues"
   },
   "funding": {
     "type": "buymeacoffee",
-    "url": "https://www.buymeacoffee.com/luligugithub"
+    "url": "https://www.buymeacoffee.com/cylon147"
   },
   "keywords": [
     "matterbridge",
