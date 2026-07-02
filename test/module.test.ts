@@ -1,6 +1,6 @@
 import { jest } from '@jest/globals';
 import { AnsiLogger, LogLevel } from 'matterbridge/logger';
-import { Matterbridge, MatterbridgeEndpoint, PlatformConfig } from 'matterbridge';
+import { MatterbridgeEndpoint, PlatformConfig, PlatformMatterbridge } from 'matterbridge';
 
 import { TemplatePlatform } from '../src/module.ts';
 
@@ -28,14 +28,22 @@ const mockMatterbridge = {
   addBridgedEndpoint: jest.fn(async (pluginName: string, device: MatterbridgeEndpoint) => {}),
   removeBridgedEndpoint: jest.fn(async (pluginName: string, device: MatterbridgeEndpoint) => {}),
   removeAllBridgedEndpoints: jest.fn(async (pluginName: string) => {}),
-} as unknown as Matterbridge;
+} as unknown as PlatformMatterbridge;
 
 const mockConfig = {
-  name: 'matterbridge-plugin-template',
+  name: 'matterbridge-atomberg-fan',
   type: 'DynamicPlatform',
   version: '1.0.0',
   debug: false,
   unregisterOnShutdown: false,
+  fans: [
+    {
+      ipAddress: '192.168.1.50',
+      displayName: 'Bedroom Fan',
+      productName: 'Atomberg Fan',
+      matterEnabled: false,
+    },
+  ],
 } as PlatformConfig;
 
 const loggerLogSpy = jest.spyOn(AnsiLogger.prototype, 'log').mockImplementation((level: string, message: string, ...parameters: any[]) => {});
@@ -52,11 +60,11 @@ describe('Matterbridge Plugin Template', () => {
   });
 
   it('should throw an error if matterbridge is not the required version', async () => {
-    mockMatterbridge.matterbridgeVersion = '2.0.0'; // Simulate an older version
+    mockMatterbridge.matterbridgeVersion = '3.0.0';
     expect(() => new TemplatePlatform(mockMatterbridge, mockLog, mockConfig)).toThrow(
-      'This plugin requires Matterbridge version >= "3.0.7". Please update Matterbridge from 2.0.0 to the latest version in the frontend.',
+      'This plugin requires Matterbridge version >= "3.9.0" for the plugin web interface. Please update Matterbridge from 3.0.0 to the latest version in the frontend.',
     );
-    mockMatterbridge.matterbridgeVersion = '3.0.7';
+    mockMatterbridge.matterbridgeVersion = '3.9.0';
   });
 
   it('should create an instance of the platform', async () => {
@@ -65,32 +73,62 @@ describe('Matterbridge Plugin Template', () => {
     expect(instance.matterbridge).toBe(mockMatterbridge);
     expect(instance.log).toBe(mockLog);
     expect(instance.config).toBe(mockConfig);
-    expect(instance.matterbridge.matterbridgeVersion).toBe('3.0.7');
-    expect(mockLog.info).toHaveBeenCalledWith('Initializing Platform...');
+    expect(instance.matterbridge.matterbridgeVersion).toBe('3.9.0');
+    expect(mockLog.info).toHaveBeenCalledWith('Initializing Atomberg Fan platform...');
   });
 
-  it('should start', async () => {
+  it('should start without auto-registering unconfigured Matter fans', async () => {
     await instance.onStart('Jest');
+    expect(instance.getDevices()).toHaveLength(0);
     expect(mockLog.info).toHaveBeenCalledWith('onStart called with reason: Jest');
-    await instance.onStart();
-    expect(mockLog.info).toHaveBeenCalledWith('onStart called with reason: none');
   });
 
-  it('should call the command handlers', async () => {
-    for (const device of instance.getDevices()) {
-      if (device.hasClusterServer('onOff')) {
-        await device.executeCommandHandler('on');
-        await device.executeCommandHandler('off');
-      }
-    }
-    expect(mockLog.info).toHaveBeenCalledWith('Command on called on cluster undefined'); // Is undefined here cause the endpoint in not active
-    expect(mockLog.info).toHaveBeenCalledWith('Command off called on cluster undefined'); // Is undefined here cause the endpoint in not active
+  it('should expose fan configuration through onFetch', async () => {
+    const list = (await instance.onFetch('GET', 'fans')) as { fans: Array<{ ipAddress: string; displayName: string }> };
+    expect(Array.isArray(list.fans)).toBe(true);
+    expect(list.fans.some((fan) => fan.ipAddress === '192.168.1.50' && fan.displayName === 'Bedroom Fan')).toBe(true);
+
+    const configured = (await instance.onFetch('POST', 'fans/configure', undefined, {
+      ipAddress: '192.168.1.51',
+      displayName: 'Kitchen Fan',
+      productName: 'Atomberg Renesa',
+    })) as { ok: boolean };
+
+    expect(configured.ok).toBe(true);
+  });
+
+  it('should update Matter identity live when a registered fan is reconfigured', async () => {
+    const updateAttribute = jest.fn(async () => true);
+    const mockEndpoint = {
+      log: mockLog,
+      deviceName: 'Bedroom Fan',
+      productName: 'Atomberg Fan',
+      updateAttribute,
+    } as unknown as MatterbridgeEndpoint;
+
+    (instance as unknown as { endpointByIp: Map<string, MatterbridgeEndpoint> }).endpointByIp.set('192.168.1.50', mockEndpoint);
+    (instance as unknown as { fanRecordByIp: Map<string, { displayName: string; productName: string }> }).fanRecordByIp.set('192.168.1.50', {
+      ipAddress: '192.168.1.50',
+      displayName: 'Bedroom Fan',
+      productName: 'Atomberg Fan',
+      serialNumber: 'ATB-1',
+      uniqueStorageKey: 'atomberg-fan-192-168-1-50',
+    });
+
+    const result = (await instance.onFetch('POST', 'fans/configure', undefined, {
+      ipAddress: '192.168.1.50',
+      displayName: 'Primary Bedroom Fan',
+      productName: 'Atomberg Renesa',
+    })) as { ok: boolean };
+
+    expect(result.ok).toBe(true);
+    expect(updateAttribute).toHaveBeenCalledWith('BridgedDeviceBasicInformation', 'nodeLabel', 'Primary Bedroom Fan', mockLog);
+    expect(mockEndpoint.deviceName).toBe('Primary Bedroom Fan');
   });
 
   it('should configure', async () => {
     await instance.onConfigure();
     expect(mockLog.info).toHaveBeenCalledWith('onConfigure called');
-    expect(mockLog.info).toHaveBeenCalledWith(expect.stringContaining('Configuring device:'));
   });
 
   it('should change logger level', async () => {
@@ -102,11 +140,12 @@ describe('Matterbridge Plugin Template', () => {
     await instance.onShutdown('Jest');
     expect(mockLog.info).toHaveBeenCalledWith('onShutdown called with reason: Jest');
 
-    // Mock the unregisterOnShutdown behavior
+    const unregisterAllDevicesSpy = jest.spyOn(instance, 'unregisterAllDevices').mockResolvedValue(undefined);
     mockConfig.unregisterOnShutdown = true;
     await instance.onShutdown();
     expect(mockLog.info).toHaveBeenCalledWith('onShutdown called with reason: none');
-    expect(mockMatterbridge.removeAllBridgedEndpoints).toHaveBeenCalled();
+    expect(unregisterAllDevicesSpy).toHaveBeenCalled();
+    unregisterAllDevicesSpy.mockRestore();
     mockConfig.unregisterOnShutdown = false;
   });
 });

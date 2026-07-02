@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Atomberg Fan Plugin",
+  "type": "object",
+  "properties": {
+    "udpListenPort": {
+      "description": "UDP port used to listen for Atomberg fan status broadcasts.",
+      "type": "number",
+      "default": 5625
+    },
+    "udpCommandPort": {
+      "description": "UDP port used to send local control commands to fans.",
+      "type": "number",
+      "default": 5600
+    },
+    "fans": {
+      "description": "Configured Atomberg fans keyed by IP address.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ipAddress": { "type": "string" },
+          "displayName": { "type": "string" },
+          "productName": { "type": "string" },
+          "matterEnabled": { "type": "boolean" }
+        }
+      },
+      "default": []
+    },
+    "openWebUi": {
+      "description": "Open the Atomberg fan discovery and configuration web interface.",
+      "type": "boolean",
+      "buttonText": "OPEN WEB UI",
+      "buttonClose": true,
+      "default": false
+    }
+  }
+}

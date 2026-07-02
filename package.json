@@ -1,7 +1,7 @@
 {
-  "name": "matterbridge-plugin-template",
+  "name": "matterbridge-atomberg-fan",
   "version": "1.0.0",
-  "description": "Matterbridge Template Plugin",
+  "description": "Matterbridge plugin for Atomberg fans with UDP discovery and web configuration UI",
   "author": "https://github.com/Luligu",
   "homepage": "https://github.com/Luligu/matterbridge-plugin-template/blob/main/README.md",
   "license": "Apache-2.0",
@@ -25,9 +25,8 @@
   "keywords": [
     "matterbridge",
     "plugin",
-    "template",
-    "matter.js",
-    "matter-node.js",
+    "atomberg",
+    "fan",
     "matter",
     "matterprotocol",
     "iot",
@@ -39,8 +38,7 @@
     "google-home",
     "alexa",
     "homeassistant",
-    "smartthings",
-    "ewelink"
+    "smartthings"
   ],
   "scripts": {
     "start": "matterbridge",
@@ -102,6 +100,7 @@
   "devDependencies": {
     "@eslint/js": "9.32.0",
     "@jest/globals": "30.0.5",
+    "@matter/main": "^0.15.4",
     "@types/jest": "30.0.0",
     "@types/node": "24.1.0",
     "@vitest/coverage-v8": "3.2.4",
@@ -114,6 +113,7 @@
     "eslint-plugin-prettier": "5.5.3",
     "eslint-plugin-promise": "7.2.1",
     "jest": "30.0.5",
+    "matterbridge": "^3.9.2",
     "npm-check-updates": "18.0.2",
     "prettier": "3.6.2",
     "shx": "0.4.0",
@@ -121,5 +121,10 @@
     "typescript": "5.8.3",
     "typescript-eslint": "8.38.0",
     "vitest": "3.2.4"
-  }
+  },
+  "files": [
+    "dist",
+    "apps/frontend/build",
+    "matterbridge-atomberg-fan.schema.json"
+  ]
 }

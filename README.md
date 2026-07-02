@@ -1,84 +1,128 @@
-# <img src="matterbridge.svg" alt="Matterbridge Logo" width="64px" height="64px">&nbsp;&nbsp;&nbsp;Matterbridge Plugin Template
+# <img src="matterbridge.svg" alt="Matterbridge Logo" width="64px" height="64px">&nbsp;&nbsp;&nbsp;Matterbridge Atomberg Fan Plugin
 
 [![npm version](https://img.shields.io/npm/v/matterbridge.svg)](https://www.npmjs.com/package/matterbridge)
-[![npm downloads](https://img.shields.io/npm/dt/matterbridge.svg)](https://www.npmjs.com/package/matterbridge)
-[![Docker Version](https://img.shields.io/docker/v/luligu/matterbridge?label=docker%20version&sort=semver)](https://hub.docker.com/r/luligu/matterbridge)
-[![Docker Pulls](https://img.shields.io/docker/pulls/luligu/matterbridge.svg)](https://hub.docker.com/r/luligu/matterbridge)
-![Node.js CI](https://github.com/Luligu/matterbridge-plugin-template/actions/workflows/build-matterbridge-plugin.yml/badge.svg)
-![CodeQL](https://github.com/Luligu/matterbridge-plugin-template/actions/workflows/codeql.yml/badge.svg)
-[![codecov](https://codecov.io/gh/Luligu/matterbridge-plugin-template/branch/main/graph/badge.svg)](https://codecov.io/gh/Luligu/matterbridge-plugin-template)
-
 [![powered by](https://img.shields.io/badge/powered%20by-matterbridge-blue)](https://www.npmjs.com/package/matterbridge)
-[![powered by](https://img.shields.io/badge/powered%20by-matter--history-blue)](https://www.npmjs.com/package/matter-history)
-[![powered by](https://img.shields.io/badge/powered%20by-node--ansi--logger-blue)](https://www.npmjs.com/package/node-ansi-logger)
-[![powered by](https://img.shields.io/badge/powered%20by-node--persist--manager-blue)](https://www.npmjs.com/package/node-persist-manager)
 
-This repository provides a default template for developing Matterbridge plugins.
+Matterbridge plugin that discovers Atomberg fans on your local network via UDP, lets you assign friendly display names, and exposes them as bridged Matter devices (Apple Home, Google Home, etc.).
 
-If you like this project and find it useful, please consider giving it a star on GitHub at [Matterbridge Plugin Template](https://github.com/Luligu/matterbridge-plugin-template) and sponsoring it.
-
-<a href="https://www.buymeacoffee.com/luligugithub">
-  <img src="bmc-button.svg" alt="Buy me a coffee" width="120">
-</a>
+**Plugin name:** `matterbridge-atomberg-fan`  
+**Requires Matterbridge:** `>= 3.9.0` (plugin web UI and `onFetch` API)
 
 ## Features
 
-- **Dev Container support for instant development environment**.
-- Pre-configured TypeScript, ESLint, Prettier, Jest and Vitest.
-- Example project structure for Accessory and Dynamic platforms.
-- Ready for customization for your own plugin.
-- The project has an already configured Jest / Vitest test unit (with 100% coverage) that you can expand while you add your own plugin logic.
+- **UDP discovery** — listens for Atomberg fan status broadcasts (default port **5625**)
+- **Web UI** — discover fans by IP, configure display names, and manage Matter registration
+- **Custom names** — display names appear in Apple Home and other Matter controllers
+- **Live name updates** — renaming a fan already in Matter updates Apple Home without re-adding
+- **Full FanControl cluster** — speed, mode, percent, rock, wind, and airflow direction support
+- **UDP control** — sends commands back to fans on port **5600** when `device_id` is known from broadcasts
 
-## Available workflows
+## Web UI
 
-The project has the following already configured workflows:
+After the plugin is installed and enabled, open:
 
-- build-matterbridge-plugin.yml: run on push and pull request and build, lint and test the plugin on node 20, 22 and 24 with ubuntu, macOS and windows.
-- publish-matterbridge-plugin.yml: publish on npm when you create a new release in GitHub. Add your NPM_TOKEN to the repository secrets.
-- publish-matterbridge-plugin-dev-daily-from-dev.yml: publish a dev on npm from main branch every day at midnight UTC if there is a new commit. Add your NPM_TOKEN to the repository secrets.
-- publish-matterbridge-plugin-dev-daily-from-main.yml: publish a dev on npm from dev branch every day at midnight UTC if there is a new commit. Add your NPM_TOKEN to the repository secrets.
-- codeql.yml: run CodeQL from the main branch on each push and pull request.
-- codecov.yml: run CodeCov from the main branch on each push and pull request. You need a codecov account and add your CODECOV_TOKEN to the repository secrets.
+```
+http://<matterbridge-host>:8283/plugins/matterbridge-atomberg-fan/
+```
 
-## ⚠️ Warning: GitHub Actions Costs for Private Repositories
+You can also click **OPEN WEB UI** in the plugin settings inside Matterbridge.
 
-**Important**: If you plan to use this template in a **private repository**, be aware that GitHub Actions usage may incur costs:
+Deep link to configure a specific fan:
 
-- **Free tier limits**: Private repositories have limited free GitHub Actions minutes per month (2,000 minutes for free accounts).
-- **Workflow intensity**: This template includes multiple workflows that run on different operating systems (Ubuntu, macOS, Windows) and Node.js versions (20, 22, 24), which can consume minutes quickly.
-- **Daily automated workflows**: The dev publishing workflows run daily, which can add up over time.
-- **Pricing varies by OS**: macOS runners cost 10x more than Ubuntu runners, Windows runners cost 2x more.
+```
+http://<matterbridge-host>:8283/plugins/matterbridge-atomberg-fan/?device=192.168.1.50
+```
 
-**Recommendations for private repos**:
+### Typical workflow
 
-- Monitor your GitHub Actions usage in your account settings
-- Consider disabling some workflows or reducing the OS/Node.js version matrix
-- Review GitHub's [pricing for Actions](https://github.com/pricing) to understand costs
-- For public repositories, GitHub Actions are free with generous limits
+1. Open the web UI and wait for fans to appear in **Discovery** (they must be on the same LAN and broadcasting UDP status).
+2. Select a fan by IP address and set a **Display name** (e.g. “Living Room Fan”).
+3. Click **Save configuration**.
+4. Click **Add to Matter** — Matterbridge may prompt for a restart.
+5. Pair or refresh your Matter bridge in Apple Home; the fan appears with your custom name.
 
-## Getting Started
+If you change the display name later, save again — the name updates live in Apple Home when the fan is already registered.
 
-1. Create a repository from this template using the [template feature of GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
-2. Clone it locally and open the cloned folder project with [VS Code](https://code.visualstudio.com/). If you have docker or docker desktop, just run `code .`.
-3. When prompted, reopen in the devcontainer. VS Code will automatically build and start the development environment with all dependencies installed.
-4. Update the code and configuration files as needed for your plugin.
-5. Follow the instructions in the matterbridge [README-DEV](https://github.com/Luligu/matterbridge/blob/main/README-DEV.md) and comments in module.ts to implement your plugin logic.
+## Installation
 
-## Using the Dev Container
+From this repository:
 
-- Docker Desktop or Docker Engine are required to use the Dev Container.
-- Devcontainer works correctly on Linux, macOS, Windows, WSL2.
-- The devcontainer provides Node.js, npm, TypeScript, ESLint, Prettier, Jest, Vitest and other tools and extensions pre-installed and configured.
-- The dev branch of Matterbridge is already build and installed into the Dev Container and linked to the plugin.
-- The devcontainer is optimized using named mounts for node_modules and matterbridge.
-- You can run, build, and test your plugin directly inside the container.
-- To open a terminal in the devcontainer, use the VS Code terminal after the container starts.
-- All commands (npm, tsc, matterbridge etc.) will run inside the container environment.
-- All the source files are on host.
-- Since the dev container doesn't have network host and IPV6, is not possible to pair matterbridge from the Devcontainer but you can add your plugin to matterbridge and test it inside the devcontainer.
+```bash
+npm install
+npm run build
+npm run matterbridge:add
+npm run matterbridge:enable
+```
 
-## Documentation
+Or install from npm once published:
 
-Refer to the Matterbridge documentation for other guidelines.
+```bash
+npm install matterbridge-atomberg-fan
+```
 
----
+Then add and enable the plugin through the Matterbridge frontend or CLI.
+
+## Configuration
+
+Plugin settings are defined in `matterbridge-atomberg-fan.schema.json`:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `udpListenPort` | `5625` | Port for fan status broadcasts |
+| `udpCommandPort` | `5600` | Port for sending control commands |
+| `fans` | `[]` | Saved fan configs (IP, display name, Matter flag) |
+| `openWebUi` | — | Button to open the plugin web UI |
+
+Fans are identified by **IP address** in the UI. The plugin learns each fan’s `device_id` from UDP broadcasts, which is required for local control commands.
+
+## Plugin API
+
+The web UI calls these routes via Matterbridge’s plugin `onFetch` handler:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `fans` | List discovered and configured fans |
+| `GET` | `settings` | UDP ports and Matter device count |
+| `POST` | `fans/configure` | Save display/product name by IP |
+| `POST` | `fans/matter` | `{ ipAddress, action: "add" \| "remove" }` |
+| `POST` | `discovery/refresh` | Refresh the fan list |
+
+## Development
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+Useful scripts:
+
+| Script | Description |
+|--------|-------------|
+| `npm run watch` | TypeScript watch mode |
+| `npm run matterbridge:add` | Register plugin with local Matterbridge |
+| `npm run matterbridge:enable` | Enable the plugin |
+| `npm run matterbridge:remove` | Remove the plugin |
+| `npm run dev:link` | Link local Matterbridge for development |
+
+### Project layout
+
+```
+src/
+  module.ts         # Platform, API, Matter lifecycle
+  udpDiscovery.ts   # UDP listener and fan tracking
+  fanMatter.ts      # Matter endpoint and FanControl handlers
+  types.ts          # Shared types
+apps/frontend/build/
+  index.html        # Plugin web UI
+```
+
+## Dev Container
+
+This project includes a VS Code Dev Container with Node.js, TypeScript, ESLint, Prettier, Jest, and Vitest pre-configured. See [Matterbridge README-DEV](https://github.com/Luligu/matterbridge/blob/main/README-DEV.md) for plugin development guidelines.
+
+> **Note:** The dev container cannot pair Matterbridge over the network; use it for build, test, and plugin logic development.
+
+## License
+
+Apache-2.0

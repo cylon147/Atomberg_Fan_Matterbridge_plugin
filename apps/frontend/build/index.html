@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Atomberg Fan Manager</title>
+    <style>
+      :root { color-scheme: light dark; --bg:#0f1419; --panel:#171d24; --panel-2:#1f2730; --text:#e8eef4; --muted:#9aa7b5; --accent:#2f8fff; --accent-2:#1f6fd1; --ok:#2ecc71; --danger:#e74c3c; --border:#2a3440; }
+      * { box-sizing: border-box; }
+      body { margin:0; font-family:Inter,system-ui,sans-serif; background:linear-gradient(180deg,#0b1015 0%,var(--bg) 100%); color:var(--text); min-height:100vh; }
+      .wrap { max-width:1100px; margin:0 auto; padding:24px; }
+      header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:24px; }
+      h1 { margin:0; font-size:1.6rem; }
+      .subtitle { color:var(--muted); margin-top:6px; font-size:.95rem; }
+      .toolbar { display:flex; gap:10px; flex-wrap:wrap; }
+      button { appearance:none; border:1px solid var(--border); background:var(--panel-2); color:var(--text); border-radius:10px; padding:10px 14px; cursor:pointer; font:inherit; }
+      button.primary { background:var(--accent); border-color:var(--accent-2); color:#fff; }
+      button.success { background:#1f7a45; border-color:#176337; color:#fff; }
+      button.danger { background:#8f2d2d; border-color:#702020; color:#fff; }
+      button:disabled { opacity:.55; cursor:not-allowed; }
+      .grid { display:grid; grid-template-columns:1.2fr .8fr; gap:18px; }
+      @media (max-width:900px){ .grid { grid-template-columns:1fr; } }
+      .card { background:var(--panel); border:1px solid var(--border); border-radius:16px; padding:18px; box-shadow:0 10px 30px rgba(0,0,0,.18); }
+      .card h2 { margin:0 0 12px; font-size:1.1rem; }
+      table { width:100%; border-collapse:collapse; }
+      th,td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--border); vertical-align:top; }
+      th { color:var(--muted); font-size:.85rem; font-weight:600; }
+      .badge { display:inline-block; padding:4px 8px; border-radius:999px; font-size:.78rem; border:1px solid var(--border); }
+      .badge.online { color:var(--ok); border-color:rgba(46,204,113,.35); }
+      .badge.offline { color:var(--muted); }
+      .badge.matter { color:#7ec8ff; border-color:rgba(47,143,255,.35); }
+      label { display:block; margin-bottom:6px; color:var(--muted); font-size:.9rem; }
+      input { width:100%; padding:11px 12px; border-radius:10px; border:1px solid var(--border); background:var(--panel-2); color:var(--text); font:inherit; margin-bottom:14px; }
+      .hint,.status { color:var(--muted); font-size:.9rem; }
+      .status.error { color:#ff8a80; }
+      .status.success { color:#8dffb0; }
+      .actions { display:flex; gap:8px; flex-wrap:wrap; }
+      .empty { padding:24px 8px; color:var(--muted); text-align:center; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div>
+          <h1>Atomberg Fan Manager</h1>
+          <div class="subtitle">Discover fans on UDP port <span id="listenPort">5625</span>, configure display names, and add them to Matter.</div>
+        </div>
+        <div class="toolbar"><button id="refreshBtn">Refresh</button></div>
+      </header>
+      <div class="grid">
+        <section class="card">
+          <h2>Discovery</h2>
+          <div class="hint" style="margin-bottom:12px">Fans are identified by IP address from local UDP broadcasts.</div>
+          <table>
+            <thead><tr><th>IP</th><th>Status</th><th>Power / Speed</th><th>Matter</th><th>Actions</th></tr></thead>
+            <tbody id="fanRows"><tr><td colspan="5" class="empty">Loading fans...</td></tr></tbody>
+          </table>
+        </section>
+        <section class="card">
+          <h2>Configuration</h2>
+          <div class="hint" style="margin-bottom:14px">The display name is shown in Apple Home and other Matter controllers.</div>
+          <label for="ipAddress">IP address</label>
+          <input id="ipAddress" readonly placeholder="Select a fan from discovery" />
+          <label for="displayName">Display name</label>
+          <input id="displayName" placeholder="Living Room Fan" />
+          <label for="productName">Product name (optional)</label>
+          <input id="productName" placeholder="Atomberg Renesa" />
+          <div class="actions" style="margin-bottom:12px"><button class="primary" id="saveBtn">Save configuration</button></div>
+          <div class="actions">
+            <button class="success" id="addMatterBtn">Add to Matter</button>
+            <button class="danger" id="removeMatterBtn">Remove from Matter</button>
+          </div>
+          <p id="formStatus" class="status" style="margin-top:14px"></p>
+        </section>
+      </div>
+    </div>
+    <script>
+      const fanRows=document.getElementById('fanRows'); const ipAddress=document.getElementById('ipAddress'); const displayName=document.getElementById('displayName'); const productName=document.getElementById('productName'); const formStatus=document.getElementById('formStatus'); const listenPort=document.getElementById('listenPort');
+      let fans=[]; let selectedIp=new URLSearchParams(location.search).get('device')||'';
+      async function api(path,options={}){const response=await fetch('api/'+path,{headers:{'Content-Type':'application/json'},...options}); if(!response.ok) throw new Error('Request failed ('+response.status+')'); return response.json();}
+      function formatLastSeen(ts){if(!ts) return 'Never'; const seconds=Math.max(0,Math.round((Date.now()-ts)/1000)); return seconds<60?seconds+'s ago':Math.round(seconds/60)+'m ago';}
+      function setFormStatus(message,type=''){formStatus.textContent=message; formStatus.className='status '+type;}
+      function selectFan(fan){selectedIp=fan.ipAddress; ipAddress.value=fan.ipAddress; displayName.value=fan.displayName||''; productName.value=fan.productName||''; setFormStatus(fan.configured?'Fan is configured.':'Set a display name before adding to Matter.');}
+      function renderFans(){if(!fans.length){fanRows.innerHTML='<tr><td colspan="5" class="empty">No fans discovered yet. Make sure fans are powered on and on the same network.</td></tr>'; return;}
+        fanRows.innerHTML=fans.map(fan=>{const selected=fan.ipAddress===selectedIp?'style="background:rgba(47,143,255,0.08)"':''; const statusClass=fan.online?'online':'offline'; const statusText=fan.online?'Online':'Offline'; const matterBadge=fan.matterRegistered?'<span class="badge matter">In Matter</span>':fan.matterEnabled?'<span class="badge">Pending</span>':'<span class="badge">Not added</span>'; const powerSpeed=fan.power===undefined&&fan.speed===undefined?'—':`${fan.power?'On':'Off'}${fan.speed!==undefined?' / speed '+fan.speed:''}`; return `<tr ${selected}><td><strong>${fan.ipAddress}</strong><br><span class="hint">${fan.displayName}</span></td><td><span class="badge ${statusClass}">${statusText}</span><br><span class="hint">${formatLastSeen(fan.lastSeen)}</span></td><td>${powerSpeed}</td><td>${matterBadge}</td><td><button data-select="${fan.ipAddress}">Configure</button></td></tr>`;}).join('');
+        fanRows.querySelectorAll('[data-select]').forEach(button=>button.addEventListener('click',()=>{const fan=fans.find(item=>item.ipAddress===button.dataset.select); if(fan) selectFan(fan);})); if(selectedIp){const selected=fans.find(fan=>fan.ipAddress===selectedIp); if(selected) selectFan(selected);}}
+      async function loadFans(){const data=await api('fans'); fans=data.fans||[]; listenPort.textContent=String(data.udpListenPort||5625); renderFans();}
+      document.getElementById('refreshBtn').addEventListener('click',async()=>{try{await api('discovery/refresh',{method:'POST',body:'{}'}); await loadFans(); setFormStatus('Discovery refreshed.','success');}catch(error){setFormStatus(error.message,'error');}});
+      document.getElementById('saveBtn').addEventListener('click',async()=>{if(!ipAddress.value){setFormStatus('Select a fan first.','error'); return;} try{const result=await api('fans/configure',{method:'POST',body:JSON.stringify({ipAddress:ipAddress.value.trim(),displayName:displayName.value.trim(),productName:productName.value.trim()})}); if(!result.ok) throw new Error(result.error||'Save failed'); await loadFans(); setFormStatus(result.fan?.matterRegistered?'Configuration saved. Apple Home name updated live.':'Configuration saved.','success');}catch(error){setFormStatus(error.message,'error');}});
+      document.getElementById('addMatterBtn').addEventListener('click',async()=>{if(!ipAddress.value){setFormStatus('Select a fan first.','error'); return;} try{const result=await api('fans/matter',{method:'POST',body:JSON.stringify({ipAddress:ipAddress.value.trim(),action:'add'})}); if(!result.ok) throw new Error(result.error||'Add to Matter failed'); await loadFans(); setFormStatus('Fan added to Matter. Restart Matterbridge if prompted.','success');}catch(error){setFormStatus(error.message,'error');}});
+      document.getElementById('removeMatterBtn').addEventListener('click',async()=>{if(!ipAddress.value){setFormStatus('Select a fan first.','error'); return;} try{const result=await api('fans/matter',{method:'POST',body:JSON.stringify({ipAddress:ipAddress.value.trim(),action:'remove'})}); if(!result.ok) throw new Error(result.error||'Remove from Matter failed'); await loadFans(); setFormStatus('Fan removed from Matter.','success');}catch(error){setFormStatus(error.message,'error');}});
+      loadFans().catch(error=>{fanRows.innerHTML=`<tr><td colspan="5" class="empty">${error.message}</td></tr>`;}); setInterval(()=>{loadFans().catch(()=>{});},10000);
+    </script>
+  </body>
+</html>
