@@ -84,6 +84,7 @@ The web UI calls these routes via Matterbridge’s plugin `onFetch` handler:
 | `GET` | `fans` | List discovered and configured fans |
 | `GET` | `settings` | UDP ports and Matter device count |
 | `POST` | `fans-configure` | Save display/product name by IP |
+| `POST` | `fans-control` | `{ ipAddress, power: true \| false }` — send UDP power on/off |
 | `POST` | `fans-matter` | `{ ipAddress, action: "add" \| "remove" }` |
 | `POST` | `discovery-refresh` | Refresh the fan list |
 

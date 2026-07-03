@@ -121,6 +121,10 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
       return this.toggleMatterRegistration(body as Record<string, unknown>);
     }
 
+    if (method === 'POST' && path === 'fans-control') {
+      return this.controlFanPower(body as Record<string, unknown>);
+    }
+
     if (method === 'POST' && path === 'discovery-refresh') {
       return { fans: this.buildFanList(), refreshedAt: Date.now() };
     }
@@ -290,6 +294,40 @@ export class TemplatePlatform extends MatterbridgeDynamicPlatform {
     this.saveConfig(this.atombergConfig);
     await this.unregisterMatterFan(ipAddress);
     this.wssSendRestartRequired(true, false);
+    return { ok: true, fan: this.buildFanList().find((fan) => fan.ipAddress === ipAddress) };
+  }
+
+  private async controlFanPower(body: Record<string, unknown>): Promise<{ ok: boolean; error?: string; fan?: FanListItem }> {
+    const ipAddress = typeof body.ipAddress === 'string' ? body.ipAddress.trim() : '';
+    const power = body.power;
+
+    if (!isValidString(ipAddress, 7)) return { ok: false, error: 'A valid IP address is required.' };
+    if (power !== true && power !== false) return { ok: false, error: 'Power must be true or false.' };
+
+    const live = this.udpDiscovery?.getFan(ipAddress);
+    const currentSpeed = live?.power === false ? 0 : (live?.speed ?? 0);
+    const command = { type: 'power', value: power };
+    const expectedSpeed = expectedSpeedAfterCommand(command, currentSpeed);
+    if (expectedSpeed !== undefined) this.markPendingControl(ipAddress, expectedSpeed);
+
+    try {
+      await this.sendUdpCommand(ipAddress, command, currentSpeed);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+
+    this.udpDiscovery?.touch(ipAddress);
+
+    const endpoint = this.endpointByIp.get(ipAddress);
+    if (endpoint && expectedSpeed !== undefined) {
+      await syncFanStateFromUdp(
+        endpoint,
+        power,
+        expectedSpeed > 0 ? expectedSpeed : undefined,
+        endpoint.log,
+      );
+    }
+
     return { ok: true, fan: this.buildFanList().find((fan) => fan.ipAddress === ipAddress) };
   }
 

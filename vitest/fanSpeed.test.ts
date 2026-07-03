@@ -35,6 +35,9 @@ describe('fanSpeed', () => {
     expect(buildAtombergUdpCommand({ type: 'fanMode', value: FanControl.FanMode.High })).toEqual({
       speed: ATOMBERG_MAX_SPEED,
     });
+    expect(buildAtombergUdpCommand({ type: 'power', value: false })).toEqual({ power: false });
+    expect(buildAtombergUdpCommand({ type: 'power', value: true }, 0)).toEqual({ speed: 1 });
+    expect(buildAtombergUdpCommand({ type: 'power', value: true }, 4)).toEqual({ speed: 4 });
   });
 
   it('predicts expected speed after step commands', () => {

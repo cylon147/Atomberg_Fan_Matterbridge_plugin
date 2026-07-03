@@ -1,0 +1,22 @@
+[Unit]
+Description=Matterbridge Atomberg Bridge
+Documentation=https://github.com/cylon147/Atomberg_Fan_Matterbridge_plugin
+After=network-online.target tailscaled.service
+Wants=network-online.target
+Requires=network-online.target
+
+[Service]
+Type=simple
+User=admin
+Group=admin
+WorkingDirectory=/home/admin
+Environment=NODE_ENV=production
+Environment=HOME=/home/admin
+ExecStartPre=/home/admin/pi-matterbridge-prep.sh
+ExecStart=/usr/bin/matterbridge --bridge --mdnsinterface eth0 --frontend 8283 --logger notice
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

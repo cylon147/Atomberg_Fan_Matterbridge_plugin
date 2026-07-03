@@ -93,5 +93,10 @@ export function buildAtombergUdpCommand(
     if (request?.direction === FanControl.StepDirection.Decrease) return { speedDelta: -1 };
   }
 
+  if (type === 'power') {
+    if (control.value === false) return { power: false };
+    if (control.value === true) return { speed: clampAtombergSpeed(currentSpeed) || 1 };
+  }
+
   return null;
 }
